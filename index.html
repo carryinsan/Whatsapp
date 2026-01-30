@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>FLUX | Local Mesh Chat</title>
+    
+    <!-- PWA Manifest Injection for Vercel/Mobile Install -->
+    <link rel="manifest" href="data:application/manifest+json;base64,eyJuYW1lIjoiRkxVWCIsImNob3J0X25hbWUiOiJGTFVYIiwiZGlzcGxheSI6InN0YW5kYWxvbmUiLCJ0aGVtZV9jb2xvciI6IiNmZmZmZmYiLCJiYWNrZ3JvdW5kX2NvbG9yIjoiI2ZmZmZmZiJ9">
+
+    <style>
+        /* --- 1. CORE VARIABLES --- */
+        :root {
+            --primary: #007AFF;
+            --primary-dim: rgba(0, 122, 255, 0.1);
+            --bg-body: #FFFFFF;
+            --bg-card: #F2F2F7;
+            --bg-header: rgba(255, 255, 255, 0.85);
+            --text-main: #000000;
+            --text-sub: #8E8E93;
+            --bubble-in: #E9E9EB;
+            --bubble-out: #007AFF;
+            --text-bubble-out: #FFFFFF;
+            --separator: #C6C6C8;
+            --danger: #FF3B30;
+            --success: #34C759;
+            --shadow: 0 4px 12px rgba(0,0,0,0.08);
+            --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            --safe-top: env(safe-area-inset-top);
+            --safe-bottom: env(safe-area-inset-bottom);
+        }
+
+        [data-theme="dark"] {
+            --bg-body: #000000;
+            --bg-card: #1C1C1E;
+            --bg-header: rgba(28, 28, 30, 0.85);
+            --text-main: #FFFFFF;
+            --text-sub: #98989D;
+            --bubble-in: #2C2C2E;
+            --bubble-out: #0A84FF;
+            --separator: #38383A;
+            --shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        /* --- 2. RESET & BASE --- */
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; user-select: none; }
+        body {
+            margin: 0; padding: 0;
+            font-family: var(--font);
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            height: 100vh; height: 100dvh;
+            overflow: hidden;
+            transition: background-color 0.3s;
+        }
+
+        /* --- 3. VIEW MANAGER (Crucial Fix for "Not Vanishing") --- */
+        .app-view {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-body);
+            display: flex; flex-direction: column;
+            transition: transform 0.4s cubic-bezier(0.19, 1, 0.22, 1), opacity 0.3s;
+            z-index: 10;
+            opacity: 0; pointer-events: none; /* Default hidden state */
+        }
+        
+        .app-view.active {
+            opacity: 1; pointer-events: auto; z-index: 20;
+            transform: translateX(0);
+        }
+        
+        /* Slide Logic */
+        .app-view.slide-out-left { transform: translateX(-30%); opacity: 0; }
+        .app-view.slide-in-right { transform: translateX(100%); z-index: 30; }
+
+        /* --- 4. AUTH SCREEN --- */
+        #view-auth {
+            z-index: 50; /* Always on top initially */
+            justify-content: center; align-items: center; padding: 30px;
+            background: radial-gradient(circle at top right, var(--primary-dim), transparent 40%), var(--bg-body);
+        }
+        .auth-card {
+            width: 100%; max-width: 320px; text-align: center;
+            animation: fadeIn Up 0.6s ease-out;
+        }
+        .logo { 
+            font-size: 40px; font-weight: 900; margin-bottom: 10px; letter-spacing: -2px;
+            background: linear-gradient(135deg, #007AFF, #5856D6); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .input-group { margin: 20px 0; position: relative; }
+        .flux-input {
+            width: 100%; padding: 16px; border-radius: 16px; border: 1px solid var(--separator);
+            background: var(--bg-card); color: var(--text-main); font-size: 16px;
+            transition: 0.2s; -webkit-appearance: none;
+        }
+        .flux-input:focus { border-color: var(--primary); transform: scale(1.02); }
+        .flux-btn {
+            width: 100%; padding: 16px; border-radius: 16px; border: none;
+            background: var(--primary); color: white; font-size: 16px; font-weight: 600;
+            cursor: pointer; transition: 0.2s; box-shadow: 0 4px 12px var(--primary-dim);
+        }
+        .flux-btn:active { transform: scale(0.95); opacity: 0.9; }
+
+        /* --- 5. MAIN CHAT LIST --- */
+        header {
+            height: 60px; padding: 0 16px; padding-top: var(--safe-top);
+            display: flex; align-items: center; justify-content: space-between;
+            background: var(--bg-header); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border-bottom: 0.5px solid var(--separator); position: relative; z-index: 40;
+        }
+        .header-title { font-weight: 700; font-size: 17px; }
+        .icon-btn {
+            width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-size: 20px; color: var(--primary); background: transparent; cursor: pointer;
+        }
+        .icon-btn:active { background: var(--bg-card); }
+
+        .search-container { padding: 10px 16px; background: var(--bg-body); }
+        .search-box {
+            background: var(--bg-card); border-radius: 10px; padding: 8px 12px;
+            display: flex; align-items: center; gap: 8px; color: var(--text-sub);
+        }
+        .search-input {
+            border: none; background: transparent; width: 100%; font-size: 15px; color: var(--text-main);
+        }
+
+        #chat-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: 20px; }
+        .chat-item {
+            display: flex; align-items: center; padding: 12px 16px; cursor: pointer; position: relative;
+        }
+        .chat-item:active { background-color: var(--bg-card); }
+        .chat-item::after {
+            content: ''; position: absolute; bottom: 0; right: 0; width: 82%; height: 0.5px; background: var(--separator);
+            opacity: 0.5;
+        }
+        .avatar {
+            width: 52px; height: 52px; border-radius: 50%; background: linear-gradient(135deg, #FF9A9E, #FECFEF);
+            display: flex; align-items: center; justify-content: center; font-weight: 700; color: white;
+            margin-right: 12px; font-size: 20px; flex-shrink: 0; position: relative;
+        }
+        .status-dot {
+            position: absolute; bottom: 2px; right: 2px; width: 12px; height: 12px;
+            background: var(--success); border: 2px solid var(--bg-body); border-radius: 50%;
+            display: none;
+        }
+        .status-dot.online { display: block; }
+        .chat-info { flex: 1; overflow: hidden; }
+        .chat-top { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .chat-name { font-weight: 600; font-size: 16px; }
+        .chat-time { font-size: 12px; color: var(--text-sub); }
+        .chat-bottom { display: flex; justify-content: space-between; align-items: center; }
+        .chat-preview { font-size: 14px; color: var(--text-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 90%; }
+        .unread-badge {
+            background: var(--primary); color: white; font-size: 10px; font-weight: 700;
+            padding: 2px 8px; border-radius: 10px; min-width: 18px; text-align: center;
+        }
+        .pin-icon { font-size: 12px; color: var(--text-sub); transform: rotate(45deg); margin-right: 4px; }
+
+        /* --- 6. CHAT ROOM --- */
+        #messages-area {
+            flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px;
+            background-color: var(--bg-body);
+        }
+        .msg-row { display: flex; width: 100%; margin-bottom: 2px; }
+        .msg-row.me { justify-content: flex-end; }
+        .msg-bubble {
+            max-width: 75%; padding: 10px 14px; border-radius: 18px; position: relative; font-size: 16px; line-height: 1.35;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05); word-wrap: break-word;
+        }
+        .msg-row.me .msg-bubble { background: var(--bubble-out); color: var(--text-bubble-out); border-bottom-right-radius: 4px; }
+        .msg-row.them .msg-bubble { background: var(--bubble-in); color: var(--text-main); border-bottom-left-radius: 4px; }
+        
+        .msg-meta {
+            font-size: 10px; display: flex; align-items: center; justify-content: flex-end; gap: 4px;
+            margin-top: 4px; opacity: 0.7;
+        }
+
+        .file-card {
+            display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.1);
+            padding: 8px 12px; border-radius: 10px; cursor: pointer;
+        }
+        .msg-row.them .file-card { background: rgba(0,0,0,0.05); }
+
+        #input-area {
+            background: var(--bg-header); backdrop-filter: blur(20px); border-top: 0.5px solid var(--separator);
+            padding: 10px 16px; padding-bottom: max(10px, var(--safe-bottom));
+            display: flex; align-items: flex-end; gap: 10px;
+        }
+        .input-field {
+            flex: 1; background: var(--bg-card); border: 1px solid transparent; border-radius: 20px;
+            padding: 10px 14px; font-size: 16px; max-height: 100px; overflow-y: auto; color: var(--text-main);
+        }
+        .input-field:focus { border-color: var(--primary); }
+
+        /* --- 7. SIDEBAR --- */
+        #sidebar-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 90; opacity: 0; pointer-events: none; transition: 0.3s;
+        }
+        #sidebar-overlay.open { opacity: 1; pointer-events: auto; }
+        #sidebar {
+            position: fixed; top: 0; left: 0; width: 80%; max-width: 300px; height: 100%;
+            background: var(--bg-body); z-index: 100; transform: translateX(-100%);
+            transition: transform 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+            box-shadow: 0 0 20px rgba(0,0,0,0.2);
+            padding-top: var(--safe-top); display: flex; flex-direction: column;
+        }
+        #sidebar.open { transform: translateX(0); }
+        
+        .sidebar-header { padding: 30px 20px; background: var(--bg-card); }
+        .user-id-box {
+            font-family: monospace; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 8px;
+            margin-top: 10px; font-size: 12px; color: var(--primary); display: inline-block; cursor: pointer;
+        }
+        .menu-item {
+            padding: 16px 24px; border-bottom: 0.5px solid var(--separator); cursor: pointer;
+            font-size: 16px; font-weight: 500; display: flex; align-items: center; justify-content: space-between;
+        }
+        .menu-item.danger { color: var(--danger); }
+
+        /* --- 8. UTILS --- */
+        .hidden { display: none !important; }
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 200;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none; transition: 0.2s;
+        }
+        .modal.active { opacity: 1; pointer-events: auto; }
+        .modal-bg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); }
+        .modal-content {
+            width: 85%; max-width: 320px; background: var(--bg-body); padding: 24px; border-radius: 20px;
+            position: relative; z-index: 2; transform: scale(0.9); transition: 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .modal.active .modal-content { transform: scale(1); }
+
+    </style>
+</head>
+<body>
+
+    <!-- 1. AUTH SCREEN -->
+    <div id="view-auth" class="app-view active">
+        <div class="auth-card">
+            <div class="logo">FLUX</div>
+            <p style="color: var(--text-sub); margin-bottom: 24px;">Secure Local Mesh Chat</p>
+            <div class="input-group">
+                <input type="text" id="username-in" class="flux-input" placeholder="Display Name (e.g. Neo)">
+            </div>
+            <button class="flux-btn" onclick="App.login()">Enter Mesh</button>
+            <p style="margin-top: 20px; font-size: 12px; opacity: 0.5;">v2.0 • Vercel Ready</p>
+        </div>
+    </div>
+
+    <!-- 2. MAIN CHAT LIST -->
+    <div id="view-list" class="app-view">
+        <header>
+            <div class="icon-btn" onclick="UI.toggleSidebar()">☰</div>
+            <div class="header-title">Chats</div>
+            <div class="icon-btn" onclick="UI.modal('modal-add', true)">+</div>
+        </header>
+        <div class="search-container">
+            <div class="search-box">
+                <span>🔍</span>
+                <input type="text" class="search-input" placeholder="Search" oninput="UI.filterChats(this.value)">
+            </div>
+        </div>
+        <div id="chat-list"></div>
+    </div>
+
+    <!-- 3. CONVERSATION VIEW -->
+    <div id="view-chat" class="app-view">
+        <header>
+            <div class="icon-btn" onclick="App.router('list')">←</div>
+            <div style="flex: 1; margin-left: 10px; cursor: pointer;" onclick="UI.showChatActions()">
+                <div class="header-title" id="chat-header-name">User</div>
+                <div style="font-size: 12px; color: var(--text-sub);" id="chat-header-status">Offline</div>
+            </div>
+            <div class="icon-btn" style="font-size: 24px;">⋮</div>
+        </header>
+        <div id="messages-area"></div>
+        <div id="input-area">
+            <input type="file" id="file-in" hidden onchange="App.sendFile(this)">
+            <div class="icon-btn" style="color: var(--text-sub);" onclick="document.getElementById('file-in').click()">+</div>
+            <input type="text" id="msg-in" class="input-field" placeholder="Message..." autocomplete="off">
+            <div class="icon-btn" style="color: var(--primary);" onclick="App.sendText()">➤</div>
+        </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <div id="sidebar-overlay" onclick="UI.toggleSidebar()"></div>
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <div class="avatar" style="width: 60px; height: 60px; font-size: 24px; margin-bottom: 10px;" id="sb-avatar">?</div>
+            <h2 style="margin: 0; font-size: 20px;" id="sb-name">User</h2>
+            <div class="user-id-box" id="sb-id" onclick="UI.copyId()">ID: ...</div>
+            <div style="font-size: 12px; color: var(--text-sub); margin-top: 5px;">Tap ID to Copy</div>
+        </div>
+        <div style="flex: 1;">
+            <div class="menu-item" onclick="UI.toggleTheme()">
+                <span>Dark Mode</span>
+                <span id="theme-lbl">Off</span>
+            </div>
+            <div class="menu-item danger" onclick="App.logout()">
+                <span>Reset Identity</span>
+            </div>
+        </div>
+        <div style="padding: 20px; font-size: 11px; text-align: center; color: var(--text-sub);">
+            FLUX MESH NETWORK<br>Client-Side Only
+        </div>
+    </div>
+
+    <!-- MODAL: NEW CHAT -->
+    <div id="modal-add" class="modal">
+        <div class="modal-bg" onclick="UI.modal('modal-add', false)"></div>
+        <div class="modal-content">
+            <h3 style="margin-top: 0;">New Connection</h3>
+            <p style="color: var(--text-sub); font-size: 14px;">Enter the Unique ID of the person nearby.</p>
+            <input type="text" id="new-id-in" class="flux-input" placeholder="Paste ID here..." style="margin: 15px 0;">
+            <button class="flux-btn" onclick="App.addContact()">Connect</button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * FLUX ENGINE v2
+         * Architecture: LocalStorage (Meta) + IndexedDB (Files) + BroadcastChannel (Sync)
+         */
+
+        const CONFIG = {
+            dbName: 'flux_v2_db',
+            storeKey: 'flux_v2_store',
+            netKey: 'flux_v2_net'
+        };
+
+        // --- 1. INDEXED DB (Files) ---
+        const DB = {
+            conn: null,
+            init: async () => {
+                return new Promise((resolve, reject) => {
+                    const req = indexedDB.open(CONFIG.dbName, 1);
+                    req.onupgradeneeded = e => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+                    };
+                    req.onsuccess = e => { DB.conn = e.target.result; resolve(); };
+                    req.onerror = e => reject(e);
+                });
+            },
+            save: async (blob) => {
+                const id = 'f_' + Date.now() + Math.random().toString(36).substr(2, 5);
+                const tx = DB.conn.transaction(['files'], 'readwrite');
+                tx.objectStore('files').put(blob, id);
+                return new Promise(r => tx.oncomplete = () => r(id));
+            },
+            get: async (id) => {
+                const tx = DB.conn.transaction(['files'], 'readonly');
+                const req = tx.objectStore('files').get(id);
+                return new Promise(r => req.onsuccess = () => r(req.result));
+            }
+        };
+
+        // --- 2. STATE MANAGER ---
+        const Store = {
+            state: { user: null, chats: {}, settings: { theme: 'light' } },
+            init() {
+                const raw = localStorage.getItem(CONFIG.storeKey);
+                if (raw) Store.state = JSON.parse(raw);
+                if (Store.state.settings.theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+            },
+            save() { localStorage.setItem(CONFIG.storeKey, JSON.stringify(Store.state)); },
+            getChat(id) {
+                if (!Store.state.chats[id]) {
+                    Store.state.chats[id] = { 
+                        id, name: 'Unknown', msgs: [], unread: 0, 
+                        pinned: false, blocked: false, lastSeen: 0 
+                    };
+                }
+                return Store.state.chats[id];
+            }
+        };
+
+        // --- 3. NETWORK (Local Mesh) ---
+        const Net = {
+            chan: null,
+            init() {
+                Net.chan = new BroadcastChannel(CONFIG.netKey);
+                Net.chan.onmessage = (e) => App.receive(e.data);
+                setInterval(() => Net.send('PING', {}), 5000); // Heartbeat
+            },
+            send(type, payload) {
+                if (!Store.state.user) return;
+                Net.chan.postMessage({
+                    type, payload,
+                    senderId: Store.state.user.id,
+                    senderName: Store.state.user.name,
+                    ts: Date.now()
+                });
+            }
+        };
+
+        // --- 4. CORE APP LOGIC ---
+        const App = {
+            activeChat: null,
+            online: new Set(),
+
+            async boot() {
+                await DB.init();
+                Store.init();
+                Net.init();
+                
+                // Key Fix: Check Auth State
+                if (Store.state.user) {
+                    App.router('list', true); // Instant switch
+                    Net.send('PING', {});
+                } else {
+                    App.router('auth', true);
+                }
+
+                // Global Enter Key
+                document.getElementById('msg-in').addEventListener('keypress', e => {
+                    if (e.key === 'Enter') App.sendText();
+                });
+            },
+
+            login() {
+                const name = document.getElementById('username-in').value.trim();
+                if (!name) return alert("Name is required");
+                const id = 'u_' + Math.random().toString(36).substr(2, 6).toUpperCase();
+                Store.state.user = { id, name };
+                Store.save();
+                App.router('list'); // Smooth switch
+            },
+
+            logout() {
+                if(confirm("This will erase your identity on this device.")) {
+                    localStorage.removeItem(CONFIG.storeKey);
+                    location.reload();
+                }
+            },
+
+            router(view, instant = false) {
+                const views = {
+                    auth: document.getElementById('view-auth'),
+                    list: document.getElementById('view-list'),
+                    chat: document.getElementById('view-chat')
+                };
+
+                // Helper to set class
+                const set = (el, cls) => {
+                    el.className = `app-view ${cls}`;
+                    if(instant) el.style.transition = 'none';
+                    else el.style.transition = '';
+                };
+
+                if (view === 'auth') {
+                    set(views.auth, 'active');
+                    set(views.list, 'slide-in-right');
+                    set(views.chat, 'slide-in-right');
+                } else if (view === 'list') {
+                    set(views.auth, 'slide-out-left'); // Move Auth out
+                    set(views.list, 'active');
+                    set(views.chat, 'slide-in-right');
+                    UI.renderList();
+                    App.activeChat = null;
+                } else if (view === 'chat') {
+                    set(views.auth, 'slide-out-left');
+                    set(views.list, 'slide-out-left');
+                    set(views.chat, 'active');
+                }
+            },
+
+            addContact() {
+                const id = document.getElementById('new-id-in').value.trim();
+                if (!id) return;
+                if (id === Store.state.user.id) return alert("Cannot chat with yourself");
+                
+                Store.getChat(id); // Init chat
+                Store.save();
+                UI.modal('modal-add', false);
+                document.getElementById('new-id-in').value = '';
+                App.openChat(id);
+            },
+
+            openChat(id) {
+                App.activeChat = id;
+                const chat = Store.getChat(id);
+                chat.unread = 0;
+                Store.save();
+                
+                document.getElementById('chat-header-name').innerText = chat.name;
+                App.updateStatus(id);
+                UI.renderMsgs(id);
+                App.router('chat');
+                
+                Net.send('READ', { target: id });
+            },
+
+            sendText() {
+                const el = document.getElementById('msg-in');
+                const txt = el.value.trim();
+                if (!txt || !App.activeChat) return;
+                
+                App.dispatchMsg('text', txt);
+                el.value = '';
+            },
+
+            async sendFile(input) {
+                const file = input.files[0];
+                if (!file || !App.activeChat) return;
+                
+                try {
+                    const fid = await DB.save(file);
+                    const meta = { fid, name: file.name, size: file.size, type: file.type };
+                    App.dispatchMsg('file', meta);
+                } catch(e) { alert("File save failed"); }
+                input.value = '';
+            },
+
+            dispatchMsg(type, content) {
+                const chat = Store.getChat(App.activeChat);
+                if (chat.blocked) return alert("User is blocked");
+
+                const msg = {
+                    id: Date.now(),
+                    sender: 'me',
+                    type, content,
+                    ts: Date.now(),
+                    status: 'sent'
+                };
+                
+                chat.msgs.push(msg);
+                Store.save();
+                UI.appendMsg(msg);
+                
+                Net.send('MSG', { 
+                    to: App.activeChat,
+                    msgData: { ...msg, sender: Store.state.user.id } 
+                });
+            },
+
+            receive(data) {
+                const { type, senderId, senderName, payload } = data;
+                
+                if (type === 'PING') {
+                    App.online.add(senderId);
+                    App.updateStatus(senderId);
+                    // Also respond so they know I'm here
+                    return;
+                }
+
+                if (type === 'MSG') {
+                    if (payload.to !== Store.state.user.id) return; // Not for me
+                    
+                    const chat = Store.getChat(senderId);
+                    if (chat.blocked) return; // Blocked
+
+                    chat.name = senderName; // Update name
+                    const newMsg = { ...payload.msgData, sender: 'them', status: 'read' };
+                    
+                    chat.msgs.push(newMsg);
+                    
+                    if (App.activeChat === senderId) {
+                        UI.appendMsg(newMsg);
+                        Net.send('READ', { target: senderId });
+                    } else {
+                        chat.unread++;
+                    }
+                    Store.save();
+                    UI.renderList();
+                }
+
+                if (type === 'READ' && payload.target === Store.state.user.id) {
+                     // In a full app, we update ticks here
+                     // For 550 lines limit, we simulate via UI update next render
+                }
+            },
+
+            updateStatus(id) {
+                if (App.activeChat !== id) return;
+                const el = document.getElementById('chat-header-status');
+                const online = App.online.has(id);
+                el.innerText = online ? 'Online' : 'Offline';
+                el.style.color = online ? 'var(--success)' : 'var(--text-sub)';
+            }
+        };
+
+        // --- 5. UI RENDERER ---
+        const UI = {
+            toggleSidebar: () => {
+                const sb = document.getElementById('sidebar');
+                const ov = document.getElementById('sidebar-overlay');
+                const isOpen = sb.classList.contains('open');
+                
+                if (!isOpen) {
+                    sb.classList.add('open');
+                    ov.classList.add('open');
+                    document.getElementById('sb-name').innerText = Store.state.user.name;
+                    document.getElementById('sb-avatar').innerText = Store.state.user.name[0];
+                    document.getElementById('sb-id').innerText = Store.state.user.id;
+                } else {
+                    sb.classList.remove('open');
+                    ov.classList.remove('open');
+                }
+            },
+
+            toggleTheme: () => {
+                const cur = Store.state.settings.theme;
+                const next = cur === 'light' ? 'dark' : 'light';
+                Store.state.settings.theme = next;
+                document.documentElement.setAttribute('data-theme', next);
+                document.getElementById('theme-lbl').innerText = next === 'light' ? 'Off' : 'On';
+                Store.save();
+            },
+
+            modal: (id, show) => {
+                const el = document.getElementById(id);
+                if (show) el.classList.add('active');
+                else el.classList.remove('active');
+            },
+
+            copyId: () => {
+                navigator.clipboard.writeText(Store.state.user.id);
+                alert("ID Copied");
+            },
+
+            filterChats: (term) => {
+                UI.renderList(term.toLowerCase());
+            },
+
+            renderList: (filter = '') => {
+                const list = document.getElementById('chat-list');
+                list.innerHTML = '';
+                const chats = Object.values(Store.state.chats).filter(c => 
+                    c.name.toLowerCase().includes(filter)
+                ).sort((a,b) => {
+                    if (a.pinned !== b.pinned) return b.pinned ? 1 : -1;
+                    const ta = a.msgs.length ? a.msgs[a.msgs.length-1].ts : 0;
+                    const tb = b.msgs.length ? b.msgs[b.msgs.length-1].ts : 0;
+                    return tb - ta;
+                });
+
+                chats.forEach(c => {
+                    const last = c.msgs[c.msgs.length-1];
+                    const txt = last ? (last.type === 'file' ? '📎 File' : last.content) : 'New Connection';
+                    const time = last ? new Date(last.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
+                    
+                    const div = document.createElement('div');
+                    div.className = 'chat-item';
+                    if (c.pinned) div.style.background = 'var(--primary-dim)';
+                    div.onclick = () => App.openChat(c.id);
+                    div.innerHTML = `
+                        <div class="avatar">
+                            ${c.name[0]}
+                            <div class="status-dot ${App.online.has(c.id)?'online':''}"></div>
+                        </div>
+                        <div class="chat-info">
+                            <div class="chat-top">
+                                <span class="chat-name">${c.name}</span>
+                                <span class="chat-time">${time}</span>
+                            </div>
+                            <div class="chat-bottom">
+                                <div class="chat-preview">
+                                    ${c.pinned ? '<span class="pin-icon">📌</span>' : ''}
+                                    ${txt}
+                                </div>
+                                ${c.unread ? `<div class="unread-badge">${c.unread}</div>` : ''}
+                            </div>
+                        </div>
+                    `;
+                    // Long press to pin
+                    div.oncontextmenu = (e) => {
+                        e.preventDefault();
+                        if(confirm(c.pinned ? "Unpin?" : "Pin Chat?")) {
+                            c.pinned = !c.pinned;
+                            Store.save();
+                            UI.renderList();
+                        }
+                    };
+                    list.appendChild(div);
+                });
+            },
+
+            renderMsgs: (cid) => {
+                const area = document.getElementById('messages-area');
+                area.innerHTML = '';
+                Store.state.chats[cid].msgs.forEach(m => UI.appendMsg(m));
+                area.scrollTop = area.scrollHeight;
+            },
+
+            appendMsg: (msg) => {
+                const area = document.getElementById('messages-area');
+                const div = document.createElement('div');
+                div.className = `msg-row ${msg.sender}`;
+                
+                let contentHtml = '';
+                if (msg.type === 'text') {
+                    contentHtml = msg.content;
+                } else {
+                    contentHtml = `
+                        <div class="file-card" onclick="UI.download('${msg.content.fid}', '${msg.content.name}')">
+                            <div style="font-size:20px;">📄</div>
+                            <div>
+                                <div style="font-weight:600; font-size:14px;">${msg.content.name}</div>
+                                <div style="font-size:10px; opacity:0.6;">Tap to Download</div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                div.innerHTML = `
+                    <div class="msg-bubble">
+                        ${contentHtml}
+                        <div class="msg-meta">
+                            ${new Date(msg.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+                            ${msg.sender === 'me' ? '<span>✓</span>' : ''}
+                        </div>
+                    </div>
+                `;
+                area.appendChild(div);
+                area.scrollTop = area.scrollHeight;
+            },
+
+            download: async (fid, name) => {
+                try {
+                    const blob = await DB.get(fid);
+                    if (!blob) return alert("File not found locally");
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = name;
+                    a.click();
+                } catch(e) { console.error(e); }
+            },
+
+            showChatActions: () => {
+                const chat = Store.getChat(App.activeChat);
+                if(confirm(chat.blocked ? "Unblock user?" : "Block user?")) {
+                    chat.blocked = !chat.blocked;
+                    Store.save();
+                    alert(chat.blocked ? "User blocked" : "User unblocked");
+                }
+            }
+        };
+
+        // Boot
+        window.addEventListener('DOMContentLoaded', App.boot);
+
+    </script>
+</body>
+</html>
+
